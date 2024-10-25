@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-xxhash-rust = {version = "*", features = ["xxh3"]}
+curl = "0.4.47"
+rand = "0.8.5"
+rand_xorshift = "0.3.0"
+
+[profile.release]
+opt-level = 3
