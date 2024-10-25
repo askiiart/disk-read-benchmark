@@ -13,7 +13,8 @@ use std::{
 fn large_random_file_generation(path: String) {
     // https://stackoverflow.com/a/65235966
     let mut out = Arc::new(Mutex::new(File::create(path)));
-    let num_threads: u64 = 10;
+    // NOTE: update this both here and in the helper (_large_random_file_generation_helper())
+    let num_threads: u64 = 12;
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
     for i in 0..num_threads {
         let out = Arc::clone(&out);
@@ -32,15 +33,17 @@ fn large_random_file_generation(path: String) {
 
 fn _large_random_file_generation_helper(i: &u64, out: Arc<Mutex<Result<File, Error>>>) {
     let mut rng = XorShiftRng::seed_from_u64(2484345508);
+    let block_size = 1310720;
+    // NOTE: update this both here and in `large_random_file_generation()`
+    let num_threads = 12;
     let mut data = [0u8; 1310720];
 
     // enter desired size in bytes, must be a multiple of 655360
     // this is not a typo, the extra zero after 65536is for the threads
     // 26843545600 = 25 GiB
-    let blocks_per_thread: u64 = 26843545600 / 13107200;
+    let blocks_per_thread: u64 = 26843545600 / (block_size * num_threads);
     for u in (i * blocks_per_thread)..((i + 1) * blocks_per_thread) {
         rng.fill_bytes(&mut data);
-        println!("{} {}", i, u);
 
         let offset: u64 = (i * blocks_per_thread * 1310720) + (1310720 * u);
         let mut out = out.lock().unwrap();
@@ -62,7 +65,7 @@ fn single_threaded_large_random_file_generation(path: String) {
 
 fn small_random_files_generation(folder: String) {
     let mut rng = XorShiftRng::seed_from_u64(2484345508);
-    let mut data = [0u8; 1000];
+    let mut data = [0u8; 1024];
     for i in 1..1001 {
         let mut out = File::create(format!("{folder}/{i}")).unwrap();
         rng.fill_bytes(&mut data);
@@ -95,7 +98,7 @@ fn grab_kernel(folder: String) {
 }
 
 fn main() {
-    large_random_file_generation("data/output".to_string());
+    large_random_file_generation("data/25G-random.bin".to_string());
     //single_threaded_large_random_file_generation("data/output".to_string())
     
     //small_random_files_generation("data/small-files/random".to_string());
