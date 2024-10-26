@@ -10,6 +10,8 @@ use std::{
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
+use clap::Parser;
+use clap::command;
 
 fn large_random_file_generation(path: String) {
     // https://stackoverflow.com/a/65235966
@@ -168,6 +170,14 @@ fn grab_datasets() {
     }
 }
 
+/// A simple read-only benchmark testing latency, sequential reads, and random reads.
+#[derive(Parser, Debug)]
+struct Args {
+    /// A test thing
+    #[arg(short, long, default_value = "hellooooo")]
+    this_is_a_testtttt: String
+}
+
 fn main() {
-    grab_datasets();
+    let args = Args::parse();
 }
