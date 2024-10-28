@@ -85,8 +85,7 @@ fn create_empty_file(path: String, size: u64) {
 
 fn small_empty_files_generation(folder: String) {
     for i in 1..1001 {
-        let out = File::create(format!("{folder}/{i}")).unwrap();
-        out.write_all_at(&[0], 1023).unwrap();
+        create_empty_file(format!("{folder}/{i}"), 1024);
     }
 }
 
@@ -165,8 +164,10 @@ fn grab_datasets() {
         println!("Empty 1 KiB files already generated")
     }
 
-    if !(exists("data/small-files/100M-polygon.txt").unwrap()) {
-        println!("*** Get 100M-sided regular polygon data and put it at `./data/small-files/100M-polygon.txt` ***");
+    if !(exists("data/100M-polygon.txt").unwrap()) {
+        println!("*** MANUAL: Get 100M-sided regular polygon data and put it at `./data/100M-polygon.txt` ***");
+    } else {
+        println!("100M-sided regular polygon data exists")
     }
 }
 
