@@ -1,17 +1,25 @@
 use curl::easy::Easy as easy_curl;
-use rand::{self, RngCore, SeedableRng};
+use rand::{self, Rng, RngCore, SeedableRng};
 use rand_xorshift::XorShiftRng;
+use std::io::Read;
+use std::time::{Duration, Instant};
 use std::{
     env::current_dir,
-    fs::{create_dir_all, exists, File},
+    fs::{create_dir_all, exists, remove_dir_all, remove_file, File},
     io::{Error, Write},
     os::unix::fs::FileExt,
     process::Command,
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
-use clap::Parser;
-use clap::command;
+
+/*
+    =================================================================
+    ====                                                         ====
+    ====                 ↓ DATASET GATHERING ↓                   ====
+    ====                                                         ====
+    =================================================================
+*/
 
 fn large_random_file_generation(path: String) {
     // https://stackoverflow.com/a/65235966
@@ -71,26 +79,42 @@ fn single_threaded_large_random_file_generation(path: String) {
 fn small_random_files_generation(folder: String) {
     let mut rng = XorShiftRng::seed_from_u64(2484345508);
     let mut data: [u8; 1024] = [0u8; 1024];
-    for i in 1..1001 {
+    for i in 1..1025 {
         let mut out = File::create(format!("{folder}/{i}")).unwrap();
         rng.fill_bytes(&mut data);
         out.write_all(&data).unwrap();
     }
 }
 
-fn create_empty_file(path: String, size: u64) {
+fn random_file_generator(path: String, size_mib: u64) {
+    let mut out = File::create(path).unwrap();
+    let mut rng = XorShiftRng::seed_from_u64(2484345508);
+
+    let mut data = [0u8; 1310720];
+    let block_size = 1310720;
+    let blocks: u64 = (size_mib * 1024 * 1024) / block_size;
+
+    for _ in 0..blocks {
+        rng.fill_bytes(&mut data);
+        out.write_all(&data).unwrap();
+    }
+}
+
+fn create_null_file(path: String, size: u64) {
     let out = File::create(path).unwrap();
     out.write_all_at(&[0], size - 1).unwrap();
 }
 
-fn small_empty_files_generation(folder: String) {
-    for i in 1..1001 {
-        create_empty_file(format!("{folder}/{i}"), 1024);
+// no reason for it not to be multithreaded, but there's not much point either, it hardly takes any time... if anything, the overhead from multithreading might be worse?
+fn small_null_files_generation(folder: String) {
+    for i in 1..1025 {
+        create_null_file(format!("{folder}/{i}"), 1024);
     }
 }
 
-fn grab_kernel(folder: String, kernel_version: String) {
-    // https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.58.tar.xz
+fn grab_kernel(folder: String, kernel_version: String) -> Result<bool, String> {
+    // maybe i should've just used reqwest, but that's no fun (also much more dependencies and stuff i'm sure)
+    // NOTE: requires openssl-devel to be installed for compilation (presumably requires openssl-libs for execution)
     if !(exists(format!("{folder}/linux-{kernel_version}.tar.xz")).unwrap()) {
         let mut curl = easy_curl::new();
         curl.url(&format!(
@@ -99,86 +123,277 @@ fn grab_kernel(folder: String, kernel_version: String) {
         .unwrap();
         curl.follow_location(true).unwrap();
         let mut out = File::create(format!("{folder}/linux-{kernel_version}.tar.xz")).unwrap();
-        curl.write_function(move |data| {
+        match curl.write_function(move |data| {
             out.write_all(data).unwrap();
             Ok(data.len())
-        })
-        .unwrap();
+        }) {
+            Ok(_) => (),
+            Err(e) => return Err(e.to_string()),
+        }
         curl.perform().unwrap();
     }
 
     // i'm too lazy to do this in rust
-    let mut dir = current_dir().unwrap();
-    dir.push(folder);
-    Command::new("tar")
-        .current_dir(dir)
-        .arg("-xf")
-        .arg(&format!("linux-{kernel_version}.tar.xz"))
-        .arg("");
+    if !(exists(format!("{folder}/linux-{kernel_version}")).unwrap()) {
+        let mut dir = current_dir().unwrap();
+        dir.push(folder);
+        match Command::new("tar")
+            .current_dir(dir)
+            .arg("-xf")
+            .arg(&format!("linux-{kernel_version}.tar.xz"))
+            .arg("")
+            .output()
+        {
+            Ok(_) => (),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    return Ok(true);
 }
 
-fn grab_datasets() {
+fn grab_datasets() -> Result<bool, String> {
     let kernel_version = "6.6.58";
 
-    create_dir_all("data/kernel").unwrap();
-
-    if !(exists(format!("data/kernel/linux-{kernel_version}")).unwrap()) {
+    if !exists(format!("data/datasets/kernel/linux-{kernel_version}")).unwrap() {
         println!("Downloading kernel...");
-        grab_kernel("data/kernel".to_string(), kernel_version.to_string());
+        create_dir_all("data/datasets/kernel").unwrap();
+        match grab_kernel(
+            "data/datasets/kernel".to_string(),
+            kernel_version.to_string(),
+        ) {
+            Ok(_) => (),
+            Err(e) => {
+                remove_dir_all(format!("data/datasets/kernel/linux-{kernel_version}")).unwrap();
+                remove_file(format!(
+                    "data/datasets/kernel/linux-{kernel_version}.tar.xz"
+                ))
+                .unwrap();
+                panic!("{}", e.to_string());
+            }
+        }
         println!("Kernel downloaded");
-    } else {
-        println!("Kernel already downloaded");
     }
 
-    if !(exists(format!("data/25G-random.bin")).unwrap()) {
+    if !exists(format!("data/datasets/25G-random.bin")).unwrap() {
         println!("Generating random 25 GiB file...");
-        large_random_file_generation("data/25G-random.bin".to_string());
+        large_random_file_generation("data/datasets/25G-random.bin".to_string());
         println!("Random 25 GiB file generated");
-    } else {
-        println!("Random 25 GiB file already generated");
     }
 
-    if !(exists(format!("data/small-files/random")).unwrap()) {
+    if !exists(format!("data/datasets/small-files/random")).unwrap() {
         println!("Generating random 1 KiB files...");
-        create_dir_all("data/small-files/random").unwrap();
-        small_random_files_generation("data/small-files/random".to_string());
+        create_dir_all("data/datasets/small-files/random").unwrap();
+        small_random_files_generation("data/datasets/small-files/random".to_string());
         println!("Random 1 KiB files generated...");
-    } else {
-        println!("Random 1 KiB files already generated")
     }
 
-    if !(exists(format!("data/25G-null.bin")).unwrap()) {
-        println!("Generating empty 25 GiB file...");
-        create_empty_file("data/25G-null.bin".to_string(), 26843545600);
-        println!("Empty 25 GiB file generated...");
-    } else {
-        println!("Empty 25 GiB file already generated");
+    if !exists(format!("data/datasets/25G-null.bin")).unwrap() {
+        println!("Generating null 25 GiB file...");
+        create_null_file("data/datasets/25G-null.bin".to_string(), 26843545600);
+        println!("Null 25 GiB file generated...");
     }
 
-    if !(exists("data/small-files/null").unwrap()) {
-        println!("Generating empty 1 KiB files...");
-        create_dir_all("data/small-files/null").unwrap();
-        small_empty_files_generation("data/small-files/null".to_string());
-        println!("Empty 1 KiB files generated...");
-    } else {
-        println!("Empty 1 KiB files already generated")
+    if !exists("data/datasets/small-files/null").unwrap() {
+        println!("Generating null 1 KiB files...");
+        create_dir_all("data/datasets/small-files/null").unwrap();
+        small_null_files_generation("data/datasets/small-files/null".to_string());
+        println!("Null 1 KiB files generated...");
     }
 
-    if !(exists("data/100M-polygon.txt").unwrap()) {
-        println!("*** MANUAL: Get 100M-sided regular polygon data and put it at `./data/100M-polygon.txt` ***");
-    } else {
-        println!("100M-sided regular polygon data exists")
-    }
+    if !exists("data/datasets/100M-polygon.txt").unwrap() {
+        return Err("*** MANUAL: Get 100M-sided regular polygon data and put it at `./data/datasets/100M-polygon.txt` ***".to_string());
+    };
+
+    return Ok(true);
 }
 
-/// A simple read-only benchmark testing latency, sequential reads, and random reads.
-#[derive(Parser, Debug)]
-struct Args {
-    /// A test thing
-    #[arg(short, long, default_value = "hellooooo")]
-    this_is_a_testtttt: String
+fn prep_other_dirs() -> bool {
+    if !exists("data/ext-workdir").unwrap() {
+        create_dir_all("data/ext-workdir").unwrap();
+    };
+
+    if !exists("data/benchmark-workdir").unwrap() {
+        create_dir_all("data/benchmark-workdir").unwrap();
+    }
+
+    if !exists("data/mountpoints").unwrap() {
+        create_dir_all("data/mountpoints").unwrap();
+    };
+
+    return true;
+}
+
+/*
+    =================================================================
+    ====                                                         ====
+    ====                     ↓ BENCHMARKS ↓                      ====
+    ====                                                         ====
+    =================================================================
+*/
+
+fn sequential_read(path: String) -> Duration {
+    let mut f: File = File::open(path).unwrap();
+    let size = f.metadata().unwrap().len();
+
+    let mut data: [u8; 1310720] = [0u8; 1310720];
+    // benchmarking/elapsed: https://stackoverflow.com/a/40953863
+    let now = Instant::now();
+    for _ in 0..(size / 1310720) {
+        f.read(&mut data).unwrap();
+    }
+    let elapsed = now.elapsed();
+    return elapsed;
+}
+
+/// Reads 1 byte from the start of file
+fn sequential_read_latency(path: String) -> Duration {
+    let mut f: File = File::open(path).unwrap();
+    let mut data: [u8; 1] = [0u8; 1];
+    let now = Instant::now();
+    f.read(&mut data).unwrap();
+    let elapsed = now.elapsed();
+    return elapsed;
+}
+
+/// Reads 1 GiB from the file at `path` in random 1 MiB chunks
+fn random_read(path: String) -> Duration {
+    let mut rng = XorShiftRng::seed_from_u64(9198675309);
+    let f: File = File::open(path).unwrap();
+    let size = f.metadata().unwrap().len();
+
+    let mut data: [u8; 1048576] = [0u8; 1048576];
+    let now = Instant::now();
+    for _ in 0..1024 {
+        let offset = rng.gen_range(0..((size - 1048576) / 1048576));
+        f.read_at(&mut data, offset).unwrap();
+    }
+    let elapsed = now.elapsed();
+    return elapsed;
+}
+
+/// Reads 1 random byte from the file at `path` 1024 times
+fn random_read_latency(path: String) -> Duration {
+    let mut rng = XorShiftRng::seed_from_u64(9198675309);
+    let f: File = File::open(path).unwrap();
+    let size = f.metadata().unwrap().len();
+    let mut data: [u8; 1] = [0u8; 1];
+    let now = Instant::now();
+    for _ in 0..1024 {
+        let offset = rng.gen_range(0..(size - 1));
+        f.read_at(&mut data, offset).unwrap();
+    }
+    let elapsed = now.elapsed();
+    return elapsed;
+}
+
+fn bulk_sequential_read(path: String) -> Vec<Duration> {
+    let mut data: [u8; 1024] = [0u8; 1024];
+    let mut times: Vec<Duration> = Vec::new();
+    for i in 1..1025 {
+        let mut f: File = File::open(format!("{path}/{i}")).unwrap();
+        let now = Instant::now();
+        f.read(&mut data).unwrap();
+        let elapsed = now.elapsed();
+        times.push(elapsed);
+    }
+
+    return times;
+}
+
+fn bulk_sequential_read_latency(path: String) -> Vec<Duration> {
+    let mut data: [u8; 1] = [0u8; 1];
+    let mut times: Vec<Duration> = Vec::new();
+    for i in 1..1025 {
+        let now = Instant::now();
+        let mut f: File = File::open(format!("{path}/{i}")).unwrap();
+        f.read(&mut data).unwrap();
+        let elapsed = now.elapsed();
+        times.push(elapsed);
+    }
+
+    return times;
+}
+
+
+fn benchmark() {
+    let mut recorder = csv::Writer::from_path("data/benchmark-data.csv").unwrap();
+    let mut bulk_recorder = csv::Writer::from_path("data/bulk.csv").unwrap();
+    let mountpoint_dir = "data/mountpoints";
+    let mut filesystems = std::fs::read_dir(mountpoint_dir)
+        .unwrap()
+        .map(|item| {
+            let tmp = item.unwrap().file_name().into_string().unwrap();
+            format!("{mountpoint_dir}/{tmp}")
+        })
+        .collect::<Vec<String>>();
+
+    filesystems.push("data/datasets".to_string());
+
+    for fs in filesystems {
+        let single_files = vec![
+            "25G-null.bin".to_string(),
+            "25G-random.bin".to_string(),
+            "100M-polygon.txt".to_string(),
+            "kernel/linux-6.6.58.tar.xz".to_string(),
+        ];
+
+        let bulk_files = vec!["small-files/null", "small-files/random"];
+
+        for filename in single_files {
+            println!("=== {} ===", filename);
+
+            let path = format!("{fs}/{filename}");
+            println!("{}", path);
+            //panic!("hi");
+
+            let seq_read = format!("{:.5?}", sequential_read(path.clone()));
+            println!("Sequential read (complete file read): {}", seq_read.clone());
+
+            let seq_latency = format!("{:.5?}", sequential_read_latency(path.clone()));
+            println!("Sequential latency (1 byte read): {}", seq_latency);
+
+            let rand_read = format!("{:.5?}", random_read(path.clone()));
+            println!("Random read (1024x 1 MiB): {}", rand_read);
+
+            let rand_latency = format!("{:.5?}", random_read_latency(path.clone()));
+            println!("Random latency (1024x 1 byte read): {}", rand_latency);
+
+            let data: Vec<String> = vec![
+                fs.clone(),
+                filename,
+                seq_read,
+                seq_latency,
+                rand_read,
+                rand_latency,
+            ];
+            recorder.write_record(data).unwrap();
+
+            println!();
+        }
+
+        for folder in bulk_files {
+            bulk_recorder.write_record(_vec_duration_to_string(bulk_sequential_read(folder.to_string()))).unwrap();
+            bulk_recorder.write_record(_vec_duration_to_string(bulk_sequential_read_latency(folder.to_string()))).unwrap();
+            //bulk_recorder.write_record(_vec_duration_to_string(bulk_random_read(folder.to_string()))).unwrap();
+            //bulk_recorder.write_record(_vec_duration_to_string(bulk_random_read_latency(folder.to_string()))).unwrap();
+        }
+
+        println!("=== === === === === === === === === === ===\n")
+    }
 }
 
 fn main() {
-    let args = Args::parse();
+    grab_datasets().unwrap();
+    prep_other_dirs();
+    benchmark();
+}
+
+fn _vec_duration_to_string(vector_committing_crimes_with_both_direction_and_magnitude: Vec<Duration>) -> Vec<String> {
+    return vector_committing_crimes_with_both_direction_and_magnitude.iter()
+    .map(|item| {
+        format!("{:.5?}", item)
+    })
+    .collect::<Vec<String>>();
+
 }
