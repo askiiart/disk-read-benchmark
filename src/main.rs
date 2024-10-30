@@ -53,7 +53,6 @@ fn _large_random_file_generation_helper(i: &u64, out: Arc<Mutex<Result<File, Err
     // this is not a typo, the extra zero after 65536is for the threads
     // 26843545600 = 25 GiB
     let blocks_per_thread: u64 = 26843545600 / (block_size * num_threads);
-    println!("{}", i);
     for u in (i * blocks_per_thread)..((i + 1) * blocks_per_thread) {
         rng.fill_bytes(&mut data);
 
@@ -209,14 +208,6 @@ fn grab_datasets() -> Result<bool, String> {
 }
 
 fn prep_other_dirs() -> bool {
-    if !exists("data/ext-workdir").unwrap() {
-        create_dir_all("data/ext-workdir").unwrap();
-    };
-
-    if !exists("data/benchmark-workdir").unwrap() {
-        create_dir_all("data/benchmark-workdir").unwrap();
-    }
-
     if !exists("data/mountpoints").unwrap() {
         create_dir_all("data/mountpoints").unwrap();
     };
@@ -315,6 +306,21 @@ fn bulk_sequential_read_latency(path: String) -> Vec<Duration> {
     return times;
 }
 
+fn bulk_random_read_latency(path: String) -> Vec<Duration> {
+    let mut rng = XorShiftRng::seed_from_u64(9198675309);
+    let mut data: [u8; 1] = [0u8; 1];
+    let mut times: Vec<Duration> = Vec::new();
+    for i in 1..1025 {
+        let mut f: File = File::open(format!("{path}/{i}")).unwrap();
+        let offset = rng.gen_range(0..1023);
+        let now = Instant::now();
+        f.read_at(&mut data, offset).unwrap();
+        let elapsed = now.elapsed();
+        times.push(elapsed);
+    }
+
+    return times;
+}
 
 fn benchmark() {
     let mut recorder = csv::Writer::from_path("data/benchmark-data.csv").unwrap();
@@ -337,15 +343,14 @@ fn benchmark() {
             "100M-polygon.txt".to_string(),
             "kernel/linux-6.6.58.tar.xz".to_string(),
         ];
-
-        let bulk_files = vec!["small-files/null", "small-files/random"];
+        let bulk_files: Vec<String> = vec![
+            "small-files/null".to_string(),
+            "small-files/random".to_string(),
+        ];
 
         for filename in single_files {
-            println!("=== {} ===", filename);
-
             let path = format!("{fs}/{filename}");
-            println!("{}", path);
-            //panic!("hi");
+            println!("=== {} ===", path.clone());
 
             let seq_read = format!("{:.5?}", sequential_read(path.clone()));
             println!("Sequential read (complete file read): {}", seq_read.clone());
@@ -356,7 +361,11 @@ fn benchmark() {
             let rand_read = format!("{:.5?}", random_read(path.clone()));
             println!("Random read (1024x 1 MiB): {}", rand_read);
 
-            let rand_latency = format!("{:.5?}", random_read_latency(path.clone()));
+            let mut rand_latency: String = "0s".to_string();
+            if fs != "data/mountpoints/fuse-archive-tar" {
+                rand_latency = format!("{:.5?}", random_read_latency(path.clone()));
+            }
+
             println!("Random latency (1024x 1 byte read): {}", rand_latency);
 
             let data: Vec<String> = vec![
@@ -368,18 +377,40 @@ fn benchmark() {
                 rand_latency,
             ];
             recorder.write_record(data).unwrap();
-
             println!();
         }
 
+        // bulk files
         for folder in bulk_files {
-            bulk_recorder.write_record(_vec_duration_to_string(bulk_sequential_read(folder.to_string()))).unwrap();
-            bulk_recorder.write_record(_vec_duration_to_string(bulk_sequential_read_latency(folder.to_string()))).unwrap();
-            //bulk_recorder.write_record(_vec_duration_to_string(bulk_random_read(folder.to_string()))).unwrap();
-            //bulk_recorder.write_record(_vec_duration_to_string(bulk_random_read_latency(folder.to_string()))).unwrap();
-        }
+            let cloned = fs.clone();
+            let path = format!("{cloned}/{folder}");
+            println!("[bulk] Testing {}", path);
+            let dataset_info: Vec<String> = vec![fs.clone(), folder];
 
-        println!("=== === === === === === === === === === ===\n")
+            let mut times = _vec_duration_to_string(bulk_sequential_read(path.clone()));
+            let mut tmp = Vec::new();
+            dataset_info.clone_into(&mut tmp);
+            tmp.push("bulk_sequential_read".to_string());
+            tmp.append(&mut times);
+            bulk_recorder.write_record(tmp).unwrap();
+
+            times = _vec_duration_to_string(bulk_sequential_read_latency(path.clone()));
+            tmp = Vec::new();
+            dataset_info.clone_into(&mut tmp);
+            tmp.push("bulk_sequential_read_latency".to_string());
+            tmp.append(&mut times);
+            bulk_recorder.write_record(tmp).unwrap();
+
+            // not enough data in these files to warrant bulk_random_read()
+            //bulk_recorder.write_record(_vec_duration_to_string(bulk_random_read(path.clone()))).unwrap();
+            times = _vec_duration_to_string(bulk_random_read_latency(path.clone()));
+            tmp = Vec::new();
+            dataset_info.clone_into(&mut tmp);
+            tmp.push("bulk_random_read_latency".to_string());
+            tmp.append(&mut times);
+            bulk_recorder.write_record(tmp).unwrap();
+        }
+        println!("\n=== === === === === === === === === === ===\n")
     }
 }
 
@@ -389,11 +420,11 @@ fn main() {
     benchmark();
 }
 
-fn _vec_duration_to_string(vector_committing_crimes_with_both_direction_and_magnitude: Vec<Duration>) -> Vec<String> {
-    return vector_committing_crimes_with_both_direction_and_magnitude.iter()
-    .map(|item| {
-        format!("{:.5?}", item)
-    })
-    .collect::<Vec<String>>();
-
+fn _vec_duration_to_string(
+    vector_committing_crimes_with_both_direction_and_magnitude: Vec<Duration>,
+) -> Vec<String> {
+    return vector_committing_crimes_with_both_direction_and_magnitude
+        .iter()
+        .map(|item| format!("{:.5?}", item))
+        .collect::<Vec<String>>();
 }

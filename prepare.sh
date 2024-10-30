@@ -17,11 +17,11 @@ time dwarfs ./data/ext-workdir/dwarfs ./data/mountpoints/dwarfs/
 #mkdir ./data/mountpoints/fuse-archive-tar-gz/
 #time fuse-archive ./data/ext-workdir/fuse-archive.tar.gz ./data/mountpoints/fuse-archive-tar-gz/
 
-cd ./data/datasets/
 if [ ! -f ./data/ext-workdir/fuse-archive.tar ]; then
+    cd ./data/datasets/
     time tar -cf ../ext-workdir/fuse-archive.tar .
+    cd -
 fi
-cd -
 mkdir ./data/mountpoints/fuse-archive-tar/
 time fuse-archive ./data/ext-workdir/fuse-archive.tar ./data/mountpoints/fuse-archive-tar/
 
@@ -33,3 +33,14 @@ time fuse-archive ./data/ext-workdir/fuse-archive.tar ./data/mountpoints/fuse-ar
 #cd -
 #mkdir ./data/mountpoints/fuse-archive-tar-zst/
 #time fuse-archive ./data/ext-workdir/fuse-archive.tar.zst ./data/mountpoints/fuse-archive-tar-zst/
+
+# btrfs-fuse is broken - ERROR: failed to scan device /dev/nvme0n1p3: -13
+device=""
+#mkdir ./data/mountpoints/btrfs-fuse
+#sudo mount $device ./data/mountpoints/btrfs-fuse
+#sudo chmod -R 777 ./data/mountpoints/btrfs-fuse/
+#if [ ! -f ./data/mountpoints/btrfs-fuse/25G-null.bin ]; then
+#    cp -r ./data/datasets/* ./data/mountpoints/btrfs-fuse/
+#    sudo umount ./data/mountpoints/btrfs-fuse/
+#fi
+#btrfs-fuse $device ./data/mountpoints/btrfs-fuse
