@@ -4,7 +4,6 @@ use std::io::Read;
 use std::time::{Duration, Instant};
 use std::{fs::File, os::unix::fs::FileExt};
 
-
 /*
     =================================================================
     ====                                                         ====
