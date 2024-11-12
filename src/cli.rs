@@ -8,7 +8,14 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
+#[derive(Debug)]
 pub enum Commands {
+    ///Generate bash completions
+    GenerateBashCompletions,
+    ///Generate zsh completions
+    GenerateZshCompletions,
+    ///Generate fish completions
+    GenerateFishCompletions,
     ///Grabs the datasets used for benchmarking
     GrabData,
     ///Runs the benchmark
