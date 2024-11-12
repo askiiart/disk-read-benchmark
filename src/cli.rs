@@ -7,8 +7,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Subcommand)]
-#[derive(Debug)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
     ///Generate bash completions
     GenerateBashCompletions,
