@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd $DIR
+mkdir ./data/ext-workdir
 
 if [ ! -f ./data/ext-workdir/dwarfs ]; then
     time mkdwarfs -l 1 -i ./data/datasets/ -o ./data/ext-workdir/dwarfs
@@ -17,13 +18,13 @@ time dwarfs ./data/ext-workdir/dwarfs ./data/mountpoints/dwarfs/
 #mkdir ./data/mountpoints/fuse-archive-tar-gz/
 #time fuse-archive ./data/ext-workdir/fuse-archive.tar.gz ./data/mountpoints/fuse-archive-tar-gz/
 
-if [ ! -f ./data/ext-workdir/fuse-archive.tar ]; then
-    cd ./data/datasets/
-    time tar -cf ../ext-workdir/fuse-archive.tar .
-    cd -
-fi
-mkdir ./data/mountpoints/fuse-archive-tar/
-time fuse-archive ./data/ext-workdir/fuse-archive.tar ./data/mountpoints/fuse-archive-tar/
+#if [ ! -f ./data/ext-workdir/fuse-archive.tar ]; then
+#    cd ./data/datasets/
+#    time tar -cf ../ext-workdir/fuse-archive.tar .
+#    cd -
+#fi
+#mkdir ./data/mountpoints/fuse-archive-tar/
+#time fuse-archive ./data/ext-workdir/fuse-archive.tar ./data/mountpoints/fuse-archive-tar/
 
 # **DISABLED** - also too slow
 #cd ./data/datasets/
