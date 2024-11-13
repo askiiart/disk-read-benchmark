@@ -2,6 +2,9 @@
 
 This tests the latency, sequential read, and random read speeds of a variety of data.
 
+![prepare.sh after being run](/readme-assets/prepare-sh.png)\
+![the benchmark after being run](/readme-assets/benchmark.png)
+
 ## Installation
 
 To install this, run the following:
