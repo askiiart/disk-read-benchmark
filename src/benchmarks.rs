@@ -150,7 +150,7 @@ pub fn benchmark() {
             let rand_read = format!("{:.5?}", random_read(path.clone()));
             println!("Random read (1024x 1 MiB): {}", rand_read);
 
-            let mut rand_latency: String = "0s".to_string();
+            let mut rand_latency: String = "0ms".to_string();
             if fs != "data/mountpoints/fuse-archive-tar" {
                 rand_latency = format!("{:.5?}", random_read_latency(path.clone()));
             }
